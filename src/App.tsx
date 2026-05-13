@@ -57,7 +57,7 @@ const DATA = {
   specialty: "BTS SIO option SISR • ESTIAM • 2024-2026",
   school: "ESTIAM",
   company: "Nu3ge",
-  profilePic: "/photo-pro.jpg",
+  profilePic: "/moi.png",
 };
 
 const STATS = [
