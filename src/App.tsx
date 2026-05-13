@@ -1,5 +1,6 @@
-import React from 'react';
-import { motion } from 'motion/react';
+import React, { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { GoogleGenAI } from "@google/genai";
 import { 
   Package, 
   Terminal, 
@@ -39,7 +40,8 @@ import {
   Monitor,
   Activity,
   Download,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Zap
 } from 'lucide-react';
 
 // ==========================================
@@ -347,6 +349,144 @@ const VEILLE_DATA = {
 
 
 // ==========================================
+// --- ASSISTANT AI ---
+// ==========================================
+
+const AIAssistant = () => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [messages, setMessages] = useState<{role: 'user' | 'assistant', content: string}[]>([
+    { role: 'assistant', content: "Bonjour ! Je suis l'assistant IA de Mohamed. Pose-moi une question sur son parcours, ses projets ou ses compétences SISR." }
+  ]);
+  const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  const handleSend = async () => {
+    if (!input.trim() || isLoading) return;
+
+    const userMessage = input.trim();
+    setInput("");
+    setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+    setIsLoading(true);
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const context = `
+        Tu es l'assistant de Mohamed Laroura. 
+        Mohamed est étudiant en BTS SIO option SISR à l'ESTIAM (2024-2026).
+        Il est alternant chez Nu3ge (Technicien Cloud & Infra).
+        Ses compétences : Docker, Linux, Réseaux (DMZ, VPN WireGuard), Monitoring (Grafana/Prometheus), GLPI, Nextcloud.
+        Ses projets phares : Supervision Docker/Grafana, Architecture DMZ sécurisée, VPN WireGuard.
+        Réponds de manière professionnelle et concise.
+      `;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `${context}\n\nQuestion de l'utilisateur : ${userMessage}`,
+      });
+
+      const aiResponse = response.text || "Je suis désolé, je n'ai pas pu générer de réponse.";
+      setMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
+    } catch (error) {
+      console.error("AI Error:", error);
+      setMessages(prev => [...prev, { role: 'assistant', content: "Désolé, j'ai rencontré un problème technique. Vérifie la configuration de l'API." }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed bottom-8 right-8 z-[100]">
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            className="absolute bottom-20 right-0 w-80 md:w-96 bg-[#0d0d12] border border-white/10 rounded-3xl shadow-2xl overflow-hidden flex flex-col"
+          >
+            <div className="p-4 bg-indigo-600 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
+                  <Zap size={16} className="text-white" />
+                </div>
+                <span className="text-xs font-black text-white uppercase tracking-widest">Assistant AI</span>
+              </div>
+              <button 
+                onClick={() => setIsOpen(false)}
+                className="text-white/60 hover:text-white transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div 
+              ref={scrollRef}
+              className="h-96 p-4 overflow-y-auto space-y-4 bg-black/40"
+            >
+              {messages.map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] p-3 rounded-2xl text-xs font-medium leading-relaxed ${
+                    msg.role === 'user' 
+                      ? 'bg-indigo-600 text-white' 
+                      : 'bg-white/5 text-gray-300 border border-white/5'
+                  }`}>
+                    {msg.content}
+                  </div>
+                </div>
+              ))}
+              {isLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-white/5 p-3 rounded-2xl flex gap-1">
+                    <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce" />
+                    <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce [animation-delay:0.2s]" />
+                    <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce [animation-delay:0.4s]" />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-white/5 bg-[#0d0d12]">
+              <div className="relative">
+                <input 
+                  type="text" 
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                  placeholder="Posez votre question..."
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 pr-12 text-xs text-white outline-none focus:border-indigo-500/50 transition-all"
+                />
+                <button 
+                  onClick={handleSend}
+                  className="absolute right-2 top-1.5 p-1.5 text-indigo-500 hover:text-indigo-400 transition-colors"
+                >
+                  <Send size={18} />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <motion.button
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-14 h-14 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-[0_10px_30px_rgba(79,70,229,0.4)]"
+      >
+        {isOpen ? <X size={24} /> : <Zap size={24} />}
+      </motion.button>
+    </div>
+  );
+};
+
+// ==========================================
 // --- COMPOSANTS ---
 // ==========================================
 
@@ -450,7 +590,7 @@ const Hero = () => (
             <img 
               src={DATA.profilePic} 
               alt={DATA.name}
-              className="w-full max-w-sm aspect-[4/5] object-cover grayscale transition-all duration-700 hover:grayscale-0"
+              className="w-full max-w-sm aspect-[4/5] object-cover transition-all duration-700"
             />
           </div>
           
@@ -624,7 +764,7 @@ const ProjectsSection = () => (
 );
 
 const E5Section = () => (
-  <section id="épreuvee5" className="py-32 bg-black">
+  <section id="epreuvee5" className="py-32 bg-black">
     <div className="container mx-auto px-6">
       <div className="mb-20">
         <span className="text-[10px] font-black text-indigo-500 tracking-[0.4em] uppercase block mb-4">// 05 — ÉPREUVE E5 BTS SIO SISR</span>
@@ -654,28 +794,7 @@ const E5Section = () => (
       </div>
 
       <div className="grid lg:grid-cols-2 gap-8">
-        {[
-          {
-            id: "PROJET 01",
-            title: "Supervision avec Grafana",
-            desc: "Mise en place d'une stack complète de monitoring pour superviser l'état des conteneurs Linux et les performances système.",
-            skills: [
-              "Gérer le patrimoine informatique",
-              "Mettre à disposition des utilisateurs un service informatique",
-              "Travailler en mode projet"
-            ]
-          },
-          {
-            id: "PROJET 02",
-            title: "Architecture DMZ avec Docker",
-            desc: "Segmentation réseau entre WAN, DMZ et LAN via Docker pour isoler les services publics des données privées.",
-            skills: [
-              "Protéger les données à caractère personnel",
-              "Déployer des solutions de sécurité",
-              "Analyse de risques et audit système"
-            ]
-          }
-        ].map((project, idx) => (
+        {E5_DATA.projects.map((project, idx) => (
           <div key={idx} className="bg-[#0d0d12] border border-white/5 rounded-[4rem] overflow-hidden flex flex-col group hover:border-indigo-500/20 transition-all">
              <div className="h-72 bg-black p-8 relative overflow-hidden">
                 <div className="absolute top-6 left-6 py-1.5 px-4 bg-indigo-600/20 border border-indigo-600/30 rounded-full text-[8px] font-black tracking-widest text-indigo-400 uppercase z-10">
@@ -788,159 +907,413 @@ const ParcoursSection = () => (
 );
 
 const VeilleSection = () => (
-  <section id="veille" className="py-32 bg-black relative">
+  <section id="veille" className="py-32 bg-[#050505] relative overflow-hidden">
     <div className="container mx-auto px-6">
-      <div className="mb-20">
+      <div className="text-center mb-24">
         <span className="text-[10px] font-black text-indigo-500 tracking-[0.4em] uppercase block mb-4 italic">// 06 — VEILLE TECHNOLOGIQUE — SESSION 2026</span>
-        <h2 className="text-6xl font-black text-white tracking-tighter italic">L'évolution du Hardware <br /><span className="text-indigo-600">Face à l'essor de l'IA</span></h2>
+        <h2 className="text-6xl lg:text-7xl font-black text-white tracking-tighter uppercase mb-6 italic">
+          Veille <span className="text-indigo-600">Technologique</span>
+        </h2>
+        <p className="text-xl text-gray-400 max-w-3xl mx-auto font-medium leading-relaxed italic border-t border-white/5 pt-8">
+          « {VEILLE_DATA.subject} »
+        </p>
       </div>
 
-      {/* Banner Intro */}
-      <div className="bg-[#0d0d12] border border-white/5 p-16 rounded-[4rem] mb-12 flex flex-col items-center text-center relative overflow-hidden group">
-         <div className="absolute top-0 right-0 p-20 opacity-5 -mr-10 -mt-10 rotate-12 group-hover:rotate-0 transition-transform duration-1000">
-           <Zap size={200} className="text-indigo-600" />
-         </div>
-         <div className="flex items-center gap-8 mb-12 relative z-10">
-            {[
-              { label: 'Articles analysés', val: '40+' },
-              { label: 'Outils actifs', val: '3' },
-              { label: 'Sources', val: '12+' }
-            ].map((stat, i) => (
-              <div key={i} className="flex flex-col items-center">
-                 <span className="text-4xl font-black text-white italic">{stat.val}</span>
-                 <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">{stat.label}</span>
-              </div>
-            ))}
-         </div>
-         <p className="text-xl text-gray-400 max-w-4xl font-medium leading-relaxed italic mb-12 border-t border-white/5 pt-12 relative z-10">
-            « {VEILLE_DATA.subject} »
-         </p>
-         <div className="flex flex-wrap justify-center gap-4 relative z-10">
-            {["Feedly", "Notion", "Google Alerts", "Ars Technica", "Tom's Hardware"].map(source => (
-              <span key={source} className="px-5 py-2.5 bg-indigo-600/10 border border-indigo-600/20 rounded-full text-[10px] font-black text-indigo-400 uppercase tracking-widest">{source}</span>
-            ))}
-         </div>
-         {VEILLE_DATA.docUrl && (
-            <motion.a 
-              whileHover={{ scale: 1.05 }}
-              href={VEILLE_DATA.docUrl} 
-              download
-              className="mt-12 px-8 py-4 bg-white text-black font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl flex items-center gap-4 relative z-10 shadow-[0_20px_40px_rgba(255,255,255,0.1)] transition-all hover:bg-indigo-600 hover:text-white"
-            >
-              <Download size={16} /> Télécharger le dossier complet (.docx)
-            </motion.a>
-         )}
-      </div>
-
-      <div className="grid lg:grid-cols-2 gap-8">
-        <div className="bg-[#0d0d12] border border-white/5 p-12 rounded-[3.5rem] group hover:border-indigo-500/20 transition-all">
-          <h3 className="text-2xl font-black mb-10 uppercase tracking-tighter italic">Tendances identifiées</h3>
-          <div className="space-y-6">
-            {VEILLE_DATA.trends.map((trend, idx) => (
-              <div key={idx} className="p-8 bg-black/40 border border-white/5 rounded-3xl hover:border-indigo-500/20 transition-all">
-                <h4 className="text-lg font-black text-white uppercase tracking-tighter mb-4 italic">{trend.title}</h4>
-                <p className="text-sm text-gray-400 leading-relaxed italic">{trend.desc}</p>
-              </div>
-            ))}
+      {/* Qu'est-ce que la veille technologique ? */}
+      <div className="max-w-4xl mx-auto mb-32">
+        <div className="text-center mb-16">
+          <h3 className="text-xs font-black uppercase tracking-[0.3em] mb-10 text-white">Qu'est-ce que la veille technologique ?</h3>
+          <p className="text-xl text-gray-400 leading-relaxed mb-12">
+            {VEILLE_DATA.definition}
+          </p>
+          <div className="p-10 border-2 border-indigo-600/30 bg-indigo-600/5 rounded-[3rem] italic text-gray-300 text-lg relative group">
+            <div className="absolute -top-4 -left-4 w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-black group-hover:scale-110 transition-transform">"</div>
+            « {VEILLE_DATA.citation} »
+            <div className="absolute -bottom-4 -right-4 w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-black group-hover:scale-110 transition-transform">"</div>
           </div>
         </div>
-        <div className="space-y-8">
-           <div className="bg-[#0d0d12] border border-white/5 p-12 rounded-[3.5rem] group hover:border-indigo-500/20 transition-all">
-             <h3 className="text-2xl font-black mb-8 uppercase tracking-tighter italic border-b border-white/5 pb-6">Méthodologie Active</h3>
-             <ul className="space-y-6">
-                {[
-                  "Scan quotidien via agrégateur RSS (Feedly)",
-                  "Mise en place d'alertes par mots-clés techniques",
-                  "Vérification croisée des sources internationales",
-                  "Capitalisation structurée dans Notion"
-                ].map((item, i) => (
-                  <div key={i} className="flex gap-4 group/item">
-                    <Target size={16} className="text-indigo-600 shrink-0 mt-1" />
-                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-tight group-hover/item:text-white transition-colors">{item}</span>
+      </div>
+
+      {/* 1. Justification & Périmètre */}
+      <div className="grid lg:grid-cols-2 gap-8 mb-32">
+        <div className="bg-[#0d0d12] border border-white/5 p-12 rounded-[3.5rem] relative overflow-hidden group hover:border-indigo-500/20 transition-all">
+          <h3 className="text-2xl font-black mb-10 uppercase tracking-tighter flex items-center gap-4">
+            <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-[10px] font-black">01</div>
+            Justification du choix
+          </h3>
+          <ul className="space-y-6">
+            {VEILLE_DATA.justification.map((item, idx) => (
+              <li key={idx} className="flex gap-4 group/item">
+                <div className="w-2 h-2 rounded-full bg-indigo-600 mt-2 shrink-0 group-hover/item:scale-125 transition-transform" />
+                <span className="text-sm text-gray-400 font-medium group-hover/item:text-white transition-colors">{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="bg-[#0d0d12] border border-white/5 p-12 rounded-[3.5rem] relative overflow-hidden group hover:border-indigo-500/20 transition-all">
+          <h3 className="text-2xl font-black mb-10 uppercase tracking-tighter flex items-center gap-4">
+            <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-[10px] font-black">02</div>
+            Périmètre d'étude
+          </h3>
+          <div className="flex flex-wrap gap-3">
+            {VEILLE_DATA.perimetre.map((item, idx) => (
+              <span key={idx} className="px-5 py-2.5 bg-white/5 border border-white/5 rounded-2xl text-[10px] font-black text-gray-400 uppercase tracking-widest hover:bg-indigo-600/10 hover:text-indigo-400 transition-all">
+                {item.split(':')[0]}
+              </span>
+            ))}
+          </div>
+          <div className="mt-10 p-8 bg-indigo-600/5 rounded-3xl border border-indigo-600/10">
+            <p className="text-[10px] font-black text-indigo-500 mb-4 uppercase tracking-[0.2em]">DÉTAILS TECHNIQUES</p>
+            <div className="space-y-3">
+              {VEILLE_DATA.perimetre.map((p, i) => (
+                <p key={i} className="text-[11px] text-gray-500 leading-relaxed font-bold uppercase tracking-tight">• {p}</p>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Méthodologie & Dashboards */}
+      <div className="bg-[#0d0d12] border border-white/5 p-16 rounded-[4rem] mb-32 relative overflow-hidden">
+        <div className="absolute top-10 right-10 opacity-5 rotate-12">
+          <Target size={250} />
+        </div>
+        <div className="flex flex-col md:flex-row items-center justify-between mb-20 gap-8 relative z-10">
+          <div>
+            <h3 className="text-3xl font-black uppercase tracking-tighter italic mb-2">Méthodologie de veille</h3>
+            <p className="text-[10px] font-black text-indigo-500 tracking-[0.3em] uppercase">OUTILS, SOURCES & FIABILITÉ</p>
+          </div>
+          <div className="w-16 h-16 bg-indigo-600/20 rounded-2xl flex items-center justify-center text-indigo-600">
+            <Target size={32} />
+          </div>
+        </div>
+        
+        <div className="grid lg:grid-cols-3 gap-16 relative z-10">
+          <div className="space-y-12">
+            <h4 className="text-[10px] font-black text-white uppercase tracking-[0.4em] mb-10 border-b border-indigo-600 pb-3 inline-block">Outils mis en place</h4>
+            <div className="space-y-8">
+              {VEILLE_DATA.methodology.tools.map((tool, idx) => (
+                <div key={idx} className="flex gap-6 group">
+                  <div className="w-2.5 h-2.5 rounded-full bg-indigo-600 mt-2 shrink-0 group-hover:scale-150 transition-transform shadow-[0_0_10px_rgba(79,70,229,0.5)]" />
+                  <div>
+                    <h5 className="text-lg font-black text-white mb-2 uppercase tracking-tighter italic">{tool.name}</h5>
+                    <p className="text-xs text-gray-500 font-medium leading-relaxed">{tool.usage}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="lg:col-span-2 grid md:grid-cols-2 gap-8">
+             {/* Mockup Google Alerts */}
+             <div className="bg-black/60 border border-white/5 rounded-[2.5rem] p-8 group hover:border-indigo-500/20 transition-all">
+                <div className="flex items-center gap-3 mb-8">
+                  <div className="w-3 h-3 rounded-full bg-red-500" />
+                  <div className="w-3 h-3 rounded-full bg-amber-500" />
+                  <div className="w-3 h-3 rounded-full bg-emerald-500" />
+                  <span className="text-[9px] font-black text-gray-600 ml-4 lg:inline hidden">GOOGLE ALERTS / INFRA</span>
+                </div>
+                <div className="space-y-4">
+                  {[
+                    "Alerte : NVIDIA Blackwell B200 Architecture",
+                    "Alerte : TSMC Arizona Fab Progress",
+                    "Alerte : Intel Lunar Lake NPU Performance"
+                  ].map((alert, i) => (
+                    <div key={i} className="p-4 bg-white/5 rounded-xl border border-white/5 flex items-center justify-between group/alert">
+                      <span className="text-[10px] font-bold text-gray-400 group-hover/alert:text-white transition-colors">{alert}</span>
+                      <Mail size={12} className="text-gray-600 group-hover/alert:text-indigo-400" />
+                    </div>
+                  ))}
+                  <div className="pt-4 border-t border-white/5 text-center">
+                    <span className="text-[8px] font-black text-indigo-500 uppercase tracking-widest">+ 12 alertes actives</span>
+                  </div>
+                </div>
+             </div>
+
+             {/* Mockup Feedly */}
+             <div className="bg-black/60 border border-white/5 rounded-[2.5rem] p-8 group hover:border-indigo-500/20 transition-all">
+                <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center gap-4">
+                    <Globe size={16} className="text-emerald-500" />
+                    <span className="text-[9px] font-black text-gray-600 uppercase tracking-widest">FEEDLY DASHBOARD</span>
+                  </div>
+                  <div className="px-2 py-1 bg-emerald-500/10 rounded text-[8px] font-black text-emerald-500">LIVE</div>
+                </div>
+                <div className="space-y-3">
+                  {VEILLE_DATA.methodology.sources_fr.map((s, i) => (
+                    <div key={i} className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/5 group/feed">
+                      <span className="text-[10px] font-bold text-gray-400 transition-colors group-hover/feed:text-white uppercase">{s}</span>
+                      <div className="w-1.5 h-1.5 rounded-full bg-gray-700 group-hover/feed:bg-emerald-500" />
+                    </div>
+                  ))}
+                </div>
+             </div>
+          </div>
+        </div>
+
+        {/* Sources Grid */}
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-12 mt-20 pt-20 border-t border-white/5">
+           <div>
+              <h4 className="text-[10px] font-black text-white uppercase tracking-[0.3em] mb-8 italic">Sources Nationales</h4>
+              <div className="flex flex-wrap gap-2">
+                {VEILLE_DATA.methodology.sources_fr.map(s => (
+                  <span key={s} className="px-3 py-1.5 bg-indigo-600/10 rounded-lg text-[9px] font-black text-indigo-400 uppercase tracking-widest">{s}</span>
+                ))}
+              </div>
+           </div>
+           <div>
+              <h4 className="text-[10px] font-black text-white uppercase tracking-[0.3em] mb-8 italic">Sources Internationales</h4>
+              <div className="flex flex-wrap gap-2">
+                {VEILLE_DATA.methodology.sources_int.map(s => (
+                  <span key={s} className="px-3 py-1.5 bg-emerald-600/10 rounded-lg text-[9px] font-black text-emerald-400 uppercase tracking-widest">{s}</span>
+                ))}
+              </div>
+           </div>
+           <div>
+              <h4 className="text-[10px] font-black text-white uppercase tracking-[0.3em] mb-8 italic">Critères de fiabilité</h4>
+              <div className="space-y-3">
+                {VEILLE_DATA.methodology.reliability.map((r, i) => (
+                  <div key={i} className="flex gap-3 items-center">
+                    <CheckCircle2 size={12} className="text-indigo-600" />
+                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tighter truncate">{r}</span>
                   </div>
                 ))}
-             </ul>
-           </div>
-           
-           <div className="bg-indigo-600 p-12 rounded-[3.5rem] relative overflow-hidden group shadow-[0_30px_60px_rgba(79,70,229,0.3)]">
-             <div className="absolute top-0 right-0 p-10 opacity-10 scale-150 rotate-12 group-hover:rotate-0 transition-transform duration-1000">
-               <ShieldCheck size={120} />
-             </div>
-             <h3 className="text-2xl font-black text-white mb-6 uppercase tracking-tighter italic relative z-10">Bilan Personnel</h3>
-             <p className="text-lg font-medium text-white/90 leading-relaxed italic relative z-10">
-               « {VEILLE_DATA.bilan.conclusion} »
-             </p>
+              </div>
            </div>
         </div>
       </div>
-    </div>
-  </section>
-);
 
-const ContactSection = () => (
-  <section id="contact" className="py-40 bg-black text-left">
-    <div className="container mx-auto px-6">
-      <div className="mb-20">
-        <span className="text-[10px] font-black text-indigo-500 tracking-[0.4em] uppercase block mb-4">ME CONTACTER</span>
-        <h2 className="text-5xl font-black text-white tracking-tighter italic">Formulaire & Infos</h2>
-        <div className="h-1 w-24 bg-indigo-600 mt-6" />
-      </div>
-
-      <div className="grid lg:grid-cols-5 gap-12">
-        <div className="lg:col-span-2 space-y-6">
-          {[
-            { icon: Mail, label: "EMAIL", val: DATA.email },
-            { icon: Linkedin, label: "LINKEDIN", val: "MOHAMED-LAROURA" },
-            { icon: MapPin, label: "LOCALISATION", val: "ÎLE-DE-FRANCE" }
-          ].map((item, idx) => (
-            <div key={idx} className="bg-[#0d0d12] border border-white/5 p-10 rounded-[2.5rem] flex items-center gap-8 group hover:border-indigo-500/20 transition-all">
-              <div className="w-14 h-14 bg-indigo-600/10 rounded-2xl flex items-center justify-center text-indigo-500 group-hover:scale-110 transition-transform">
-                <item.icon size={24} />
+      {/* 3. Bilan Organisationnel / Conclusion workflow */}
+      <div className="max-w-4xl mx-auto mb-32">
+        <div className="bg-indigo-600 text-white p-12 rounded-[3.5rem] shadow-[0_30px_60px_rgba(79,70,229,0.3)]">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-10 mb-10">
+            <div className="flex items-center gap-8">
+              <div className="w-16 h-16 rounded-2xl bg-white/20 flex items-center justify-center">
+                <CheckCircle2 size={32} />
               </div>
-              <div className="overflow-hidden">
-                <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">{item.label}</p>
-                <p className="text-sm font-black text-white truncate">{item.val}</p>
+              <div>
+                <h4 className="text-2xl font-black uppercase tracking-tighter italic">Mon Organisation Personnelle</h4>
+                <p className="text-[10px] font-black text-white/70 uppercase tracking-widest">SYNTHÈSE DU WORKFLOW</p>
               </div>
             </div>
+            {VEILLE_DATA.docUrl && (
+              <a 
+                href={VEILLE_DATA.docUrl} 
+                download
+                className="px-8 py-4 bg-white text-indigo-600 hover:bg-gray-100 rounded-2xl text-[10px] font-black tracking-widest uppercase flex items-center gap-3 transition-all shadow-xl"
+              >
+                <Download size={16} /> Dossier de Veille (.docx)
+              </a>
+            )}
+          </div>
+          <p className="text-xl font-medium leading-relaxed italic border-t border-white/20 pt-8">
+            « {VEILLE_DATA.bilan.conclusion} »
+          </p>
+        </div>
+      </div>
+
+      {/* 4. Trends */}
+      <div className="grid lg:grid-cols-3 gap-8 mb-8">
+        {VEILLE_DATA.trends.map((trend, idx) => (
+          <div key={idx} className="p-12 bg-[#0d0d12] border border-white/5 rounded-[3.5rem] relative overflow-hidden group hover:border-indigo-500/20 transition-all">
+            <div className="absolute top-0 right-0 p-10 opacity-5 scale-150 rotate-12 group-hover:opacity-10 transition-opacity">
+              <LineChart size={120} />
+            </div>
+            <h4 className="text-2xl font-black text-white mb-6 uppercase tracking-tighter italic relative z-10 group-hover:text-indigo-400 transition-colors">{trend.title}</h4>
+            <p className="text-sm font-medium text-gray-400 leading-relaxed relative z-10 group-hover:text-gray-300 transition-colors">{trend.desc}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* 5. Articles capitalisés */}
+      <div className="bg-[#0d0d12] border border-white/5 p-16 rounded-[4.5rem] mb-8 relative overflow-hidden">
+        <div className="absolute top-10 right-10 opacity-5">
+           <BookOpen size={300} />
+        </div>
+        <div className="mb-16 relative z-10">
+          <h3 className="text-3xl font-black italic uppercase tracking-tighter mb-4">Fiches de veille capitalisées</h3>
+          <p className="text-[10px] font-black text-indigo-500 tracking-widest uppercase">TABLEAU DE SYNTHÈSE — MAI 2025 / AVRIL 2026</p>
+        </div>
+
+        <div className="grid lg:grid-cols-2 gap-4 relative z-10">
+          {VEILLE_DATA.articles.map((article, idx) => (
+            <motion.div 
+              key={idx}
+              whileHover={{ x: 10 }}
+              className="p-8 bg-black/40 border border-white/5 rounded-3xl hover:border-indigo-500/30 transition-all group"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-600" />
+                  <span className="text-[10px] font-black text-gray-500 tracking-widest uppercase">{article.date}</span>
+                </div>
+                <span className="text-[9px] font-black text-white/50 uppercase tracking-widest px-3 py-1 bg-indigo-600/10 rounded-full group-hover:bg-indigo-600/30 transition-colors">{article.source}</span>
+              </div>
+              <h4 className="text-lg font-black text-white mb-6 uppercase tracking-tighter group-hover:text-indigo-400 transition-colors leading-tight italic">
+                {article.title}
+              </h4>
+              <div className="pl-6 border-l-2 border-indigo-600/30">
+                <p className="text-[11px] text-gray-500 font-bold leading-relaxed uppercase tracking-tighter italic">
+                  Analyse : {article.analysis}
+                </p>
+              </div>
+            </motion.div>
           ))}
         </div>
+      </div>
 
-        <div className="lg:col-span-3 bg-[#0d0d12] border border-white/5 p-16 rounded-[4rem] relative">
-          <div className="flex items-center gap-6 mb-16">
-            <img src={DATA.profilePic} className="w-16 h-16 rounded-2xl object-cover" alt="" />
+      {/* 6. Bilan & Apports/Limites */}
+      <div className="grid lg:grid-cols-2 gap-8">
+        <div className="bg-[#0d0d12] border border-white/5 p-12 rounded-[3.5rem] group hover:border-indigo-500/20 transition-all">
+          <h3 className="text-2xl font-black mb-12 uppercase tracking-tighter flex items-center gap-4 italic group-hover:text-white transition-colors">
+            Apports & Limites
+          </h3>
+          <div className="space-y-12">
             <div>
-              <h4 className="text-xl font-black uppercase tracking-tight">{DATA.name} {DATA.lastName}</h4>
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">OPEN TO HIRING</p>
-              </div>
+              <p className="text-[10px] font-black text-indigo-500 tracking-widest uppercase mb-6 flex items-center gap-3">
+                <CheckCircle2 size={14} /> APPÔRTS PRINCIPAUX
+              </p>
+              <ul className="space-y-4">
+                {VEILLE_DATA.bilan.apports.map((item, idx) => (
+                  <li key={idx} className="flex items-center gap-4 group/item">
+                    <div className="w-5 h-5 rounded bg-indigo-600 flex items-center justify-center text-[10px] font-black">✓</div>
+                    <span className="text-xs font-bold text-gray-400 uppercase tracking-tighter group-hover/item:text-white transition-colors">{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-rose-500 tracking-widest uppercase mb-6 flex items-center gap-3">
+                <ShieldAlert size={14} /> LIMITES IDENTIFIÉES
+              </p>
+              <ul className="space-y-4">
+                {VEILLE_DATA.bilan.limites.map((item, idx) => (
+                  <li key={idx} className="flex items-center gap-4 group/limit">
+                    <div className="w-5 h-5 rounded bg-rose-600 flex items-center justify-center text-[10px] font-black">!</div>
+                    <span className="text-xs font-bold text-gray-400 uppercase tracking-tighter group-hover/limit:text-gray-300 transition-colors italic">{item}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
-
-          <form className="space-y-10">
-            <div className="grid md:grid-cols-2 gap-10">
-              <div className="space-y-3">
-                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-4">Full Name</label>
-                <input type="text" placeholder="Votre nom" className="w-full bg-black/40 border border-white/5 rounded-3xl px-8 py-5 text-sm text-white focus:border-indigo-500/50 outline-none transition-all" />
-              </div>
-              <div className="space-y-3">
-                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-4">Email Address</label>
-                <input type="email" placeholder="votre@email.com" className="w-full bg-black/40 border border-white/5 rounded-3xl px-8 py-5 text-sm text-white focus:border-indigo-500/50 outline-none transition-all" />
-              </div>
-            </div>
-            <div className="space-y-3">
-              <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-4">Message</label>
-              <textarea placeholder="Comment puis-je vous aider ?" rows={5} className="w-full bg-black/40 border border-white/5 rounded-[2.5rem] px-8 py-6 text-sm text-white focus:border-indigo-500/50 outline-none transition-all resize-none"></textarea>
-            </div>
-            <button className="w-full py-6 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-[2rem] flex items-center justify-center gap-4 transition-all shadow-[0_20px_50px_rgba(79,70,229,0.3)]">
-              SUBMIT REQUEST <Mail size={18} />
-            </button>
-          </form>
+        </div>
+        
+        <div className="bg-indigo-600 p-12 rounded-[3.5rem] relative overflow-hidden group shadow-[0_30px_60px_rgba(79,70,229,0.3)]">
+          <div className="absolute top-0 right-0 p-12 opacity-10 scale-150 rotate-12 group-hover:scale-175 transition-transform duration-1000">
+            <Search size={150} className="text-white" />
+          </div>
+          <h3 className="text-2xl font-black text-white mb-12 uppercase tracking-tighter italic relative z-10 border-b border-white/20 pb-6">Perspectives à suivre</h3>
+          <ul className="space-y-8 relative z-10">
+            {VEILLE_DATA.bilan.perspectives.map((item, idx) => (
+              <motion.li 
+                key={idx} 
+                whileHover={{ x: 10 }}
+                className="flex gap-6 group/perspective"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-white shrink-0 group-hover/perspective:bg-white group-hover/perspective:text-indigo-600 transition-all shadow-lg">
+                  <ChevronRight size={22} />
+                </div>
+                <div className="flex flex-col justify-center">
+                  <span className="text-sm font-black text-white uppercase tracking-tighter leading-tight">
+                    {item}
+                  </span>
+                  <div className="w-8 h-0.5 bg-white/20 mt-2 group-hover/perspective:w-full transition-all" />
+                </div>
+              </motion.li>
+            ))}
+          </ul>
         </div>
       </div>
     </div>
   </section>
 );
+
+const ContactSection = () => {
+  const [submitted, setSubmitted] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitted(true);
+    setTimeout(() => setSubmitted(false), 5000);
+  };
+
+  return (
+    <section id="contact" className="py-40 bg-black text-left">
+      <div className="container mx-auto px-6">
+        <div className="mb-20">
+          <span className="text-[10px] font-black text-indigo-500 tracking-[0.4em] uppercase block mb-4">ME CONTACTER</span>
+          <h2 className="text-5xl font-black text-white tracking-tighter italic">Formulaire & Infos</h2>
+          <div className="h-1 w-24 bg-indigo-600 mt-6" />
+        </div>
+
+        <div className="grid lg:grid-cols-5 gap-12">
+          <div className="lg:col-span-2 space-y-6">
+            {[
+              { icon: Mail, label: "EMAIL", val: DATA.email },
+              { icon: Linkedin, label: "LINKEDIN", val: "MOHAMED-LAROURA" },
+              { icon: MapPin, label: "LOCALISATION", val: "ÎLE-DE-FRANCE" }
+            ].map((item, idx) => (
+              <div key={idx} className="bg-[#0d0d12] border border-white/5 p-10 rounded-[2.5rem] flex items-center gap-8 group hover:border-indigo-500/20 transition-all">
+                <div className="w-14 h-14 bg-indigo-600/10 rounded-2xl flex items-center justify-center text-indigo-500 group-hover:scale-110 transition-transform">
+                  <item.icon size={24} />
+                </div>
+                <div className="overflow-hidden">
+                  <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">{item.label}</p>
+                  <p className="text-sm font-black text-white truncate">{item.val}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="lg:col-span-3 bg-[#0d0d12] border border-white/5 p-16 rounded-[4rem] relative">
+            <div className="flex items-center gap-6 mb-16">
+              <img src={DATA.profilePic} className="w-16 h-16 rounded-2xl object-cover" alt="" />
+              <div>
+                <h4 className="text-xl font-black uppercase tracking-tight">{DATA.name} {DATA.lastName}</h4>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">OPEN TO HIRING</p>
+                </div>
+              </div>
+            </div>
+
+            {submitted ? (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="h-full flex flex-col items-center justify-center text-center p-10 bg-indigo-600/10 rounded-3xl border border-indigo-600/20"
+              >
+                <CheckCircle2 size={64} className="text-indigo-500 mb-6" />
+                <h4 className="text-2xl font-black text-white uppercase italic mb-4">Message Envoyé !</h4>
+                <p className="text-sm text-gray-400 font-medium">Merci Mohamed, votre message a bien été reçu. Je vous répondrai dans les plus brefs délais.</p>
+              </motion.div>
+            ) : (
+              <form className="space-y-10" onSubmit={handleSubmit}>
+                <div className="grid md:grid-cols-2 gap-10">
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-4">Full Name</label>
+                    <input required type="text" placeholder="Votre nom" className="w-full bg-black/40 border border-white/5 rounded-3xl px-8 py-5 text-sm text-white focus:border-indigo-500/50 outline-none transition-all" />
+                  </div>
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-4">Email Address</label>
+                    <input required type="email" placeholder="votre@email.com" className="w-full bg-black/40 border border-white/5 rounded-3xl px-8 py-5 text-sm text-white focus:border-indigo-500/50 outline-none transition-all" />
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-4">Message</label>
+                  <textarea required placeholder="Comment puis-je vous aider ?" rows={5} className="w-full bg-black/40 border border-white/5 rounded-[2.5rem] px-8 py-6 text-sm text-white focus:border-indigo-500/50 outline-none transition-all resize-none"></textarea>
+                </div>
+                <button type="submit" className="w-full py-6 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-[2rem] flex items-center justify-center gap-4 transition-all shadow-[0_20px_50px_rgba(79,70,229,0.3)]">
+                  SUBMIT REQUEST <Mail size={18} />
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+};
 
 const Footer = () => (
   <footer className="py-20 border-t border-white/5 bg-black">
@@ -960,6 +1333,7 @@ const Footer = () => (
 export default function App() {
   return (
     <div className="bg-black text-white min-h-screen selection:bg-indigo-600 font-sans antialiased overflow-x-hidden scroll-smooth">
+      <AIAssistant />
       <Navbar />
       <Hero />
       <AboutSection />
